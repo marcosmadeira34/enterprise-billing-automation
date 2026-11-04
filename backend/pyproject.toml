@@ -126,12 +126,14 @@ ignore = [
     "TC001",   # Move application import into TYPE_CHECKING
     "TC002",   # Move third-party import into TYPE_CHECKING
     "TC003",   # Move stdlib import into TYPE_CHECKING
+    "UP046",   # Generic class uses Generic subclass instead of type parameters
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "S107", "ANN", "SIM"]
 "alembic/**/*.py" = ["ANN", "ERA", "I"]
 "app/config.py" = ["S104"]
+"app/core/repository.py" = ["B009", "B010"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

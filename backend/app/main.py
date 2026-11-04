@@ -17,7 +17,9 @@ from starlette.middleware.base import RequestResponseEndpoint
 from app.api.health import router as health_router
 from app.api.v1.router import api_v1_router
 from app.config import Settings, get_settings
+from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
+from app.core.middleware import TenantContextMiddleware
 
 logger = structlog.get_logger(__name__)
 
@@ -51,7 +53,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # 1. Middleware de CORS
+    # 1. Tratadores de Exceções Customizados
+    register_exception_handlers(app)
+
+    # 2. Middleware de CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=current_settings.allowed_origins,
@@ -60,7 +65,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 2. Middleware de Correlation / Request ID
+    # 3. Middleware de Contexto Multi-Tenant
+    app.add_middleware(TenantContextMiddleware)
+
+    # 4. Middleware de Correlation / Request ID
     @app.middleware("http")
     async def request_id_middleware(
         request: Request, call_next: RequestResponseEndpoint
@@ -71,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-ID"] = req_id
         return response
 
-    # 3. Registro de Rotas
+    # 5. Registro de Rotas
     app.include_router(health_router)
     app.include_router(api_v1_router)
 
