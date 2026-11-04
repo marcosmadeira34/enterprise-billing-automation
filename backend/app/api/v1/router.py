@@ -14,4 +14,3 @@ api_v1_router = APIRouter(prefix="/api/v1")
 async def get_v1_status() -> dict[str, str]:
     """Retorna versão e integridade da API v1."""
     return {"api_version": "v1", "status": "active"}
-
