@@ -1,0 +1,207 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eba-backend"
+version = "0.1.0"
+description = "Enterprise Billing Automation — Backend API"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = { text = "Proprietary" }
+authors = [{ name = "EBA Team" }]
+
+dependencies = [
+    # -------------------------------------------------------------------------
+    # API Framework
+    # -------------------------------------------------------------------------
+    "fastapi>=0.115.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "uvicorn[standard]>=0.32.0",
+    "httpx>=0.27.0",
+    "python-multipart>=0.0.12",
+    "orjson>=3.10.0",
+
+    # -------------------------------------------------------------------------
+    # Database
+    # -------------------------------------------------------------------------
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14.0",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.10",
+
+    # -------------------------------------------------------------------------
+    # Async Workers
+    # -------------------------------------------------------------------------
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+
+    # -------------------------------------------------------------------------
+    # Object Storage
+    # -------------------------------------------------------------------------
+    "boto3>=1.35.0",
+
+    # -------------------------------------------------------------------------
+    # Security
+    # -------------------------------------------------------------------------
+    "PyJWT>=2.9.0",
+    "cryptography>=43.0.0",
+    "argon2-cffi>=23.1.0",
+    "slowapi>=0.1.9",
+    "itsdangerous>=2.2.0",
+
+    # -------------------------------------------------------------------------
+    # Email
+    # -------------------------------------------------------------------------
+    "fastapi-mail>=1.4.1",
+    "jinja2>=3.1.4",
+
+    # -------------------------------------------------------------------------
+    # Utilities
+    # -------------------------------------------------------------------------
+    "structlog>=24.4.0",
+    "pendulum>=3.0.0",
+    "openpyxl>=3.1.5",
+    "sentry-sdk[fastapi]>=2.17.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "factory-boy>=3.3.1",
+    "Faker>=30.0.0",
+    "respx>=0.21.0",
+    # Code Quality
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "types-boto3",
+    "types-passlib",
+    # Security
+    "bandit>=1.8.0",
+    "pip-audit>=2.7.0",
+    # Dev Tools
+    "pre-commit>=4.0.0",
+    "ipython>=8.28.0",
+    # Celery Monitor
+    "flower>=2.0.1",
+]
+
+# =============================================================================
+# Tool Configurations
+# =============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "S",   # flake8-bandit (security)
+    "ANN", # flake8-annotations
+    "PT",  # flake8-pytest-style
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "TID", # flake8-tidy-imports
+    "ERA", # eradicate (commented out code)
+]
+ignore = [
+    "ANN401",  # Dynamically typed expressions (Any)
+    "S101",    # Use of assert (allowed in tests)
+    "B008",    # Do not perform function calls in default arguments (FastAPI Depends)
+    "TC001",   # Move application import into TYPE_CHECKING
+    "TC002",   # Move third-party import into TYPE_CHECKING
+    "TC003",   # Move stdlib import into TYPE_CHECKING
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106", "S107", "ANN", "SIM"]
+"alembic/**/*.py" = ["ANN", "ERA", "I"]
+"app/config.py" = ["S104"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# -----------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+exclude = ["alembic/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*"]
+ignore_missing_imports = true
+
+# -----------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = [
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-fail-under=80",
+    "--strict-markers",
+    "-v",
+]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (requires database and services)",
+    "e2e: End-to-end tests (full stack)",
+    "slow: Tests that take a long time to run",
+    "security: Security-focused tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+    "tests/*",
+    "alembic/*",
+    "app/main.py",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
+
+# -----------------------------------------------------------------------------
+
+[tool.bandit]
+exclude_dirs = ["tests", "alembic"]
+skips = ["B101"]  # assert_used — allowed in tests
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

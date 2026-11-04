@@ -1,0 +1,307 @@
+# =============================================================================
+# EBA — Docker Compose (DEVELOPMENT)
+# =============================================================================
+# Uso: docker compose up -d
+# Parar:  docker compose down
+# Reset:  docker compose down -v  (apaga volumes — CUIDADO)
+# Logs:   docker compose logs -f [servico]
+# =============================================================================
+
+name: eba-dev
+
+x-common-env: &common-env
+  APP_ENV: ${APP_ENV:-development}
+  SECRET_KEY: ${SECRET_KEY}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${POSTGRES_DB:-eba_dev}
+  POSTGRES_USER: ${POSTGRES_USER:-eba_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+  MINIO_BUCKET_DOCUMENTS: ${MINIO_BUCKET_DOCUMENTS:-eba-documents}
+  MINIO_SECURE: "false"
+  MAIL_SERVER: mailhog
+  MAIL_PORT: 1025
+  LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+  LOG_FORMAT: console
+  CELERY_TASK_ALWAYS_EAGER: "false"
+  SENTRY_DSN: ""
+  FEATURE_SENTRY: "false"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 — Banco de dados principal
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: eba-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-eba_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-eba_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eba_user} -d ${POSTGRES_DB:-eba_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - eba-network
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — Broker Celery + Cache
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: eba-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - eba-network
+
+  # ---------------------------------------------------------------------------
+  # MinIO — Object Storage (S3-compatible)
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: eba-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"    # API S3
+      - "9001:9001"    # Console web
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - eba-network
+
+  # Inicializa buckets do MinIO
+  minio-init:
+    image: minio/mc:latest
+    container_name: eba-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY};
+        mc mb --ignore-existing local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
+        mc anonymous set none local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
+        echo 'MinIO buckets initialized OK';
+        exit 0;
+      "
+    networks:
+      - eba-network
+
+  # ---------------------------------------------------------------------------
+  # MailHog — SMTP fake para desenvolvimento
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: eba-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"    # SMTP
+      - "8025:8025"    # Web UI
+    networks:
+      - eba-network
+
+  # ---------------------------------------------------------------------------
+  # API — FastAPI Backend
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eba-api
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    volumes:
+      - ./backend:/app                    # hot-reload em desenvolvimento
+      - /app/.venv                        # preserva venv dentro do container
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - eba-network
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --log-level debug
+
+  # ---------------------------------------------------------------------------
+  # Worker — Celery (fila default)
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eba-worker
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eba-network
+    command: >
+      celery -A app.tasks.celery_app worker
+      --loglevel=info
+      --queues=critical,high,default,low
+      --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+
+  # ---------------------------------------------------------------------------
+  # Worker Beat — Celery Scheduler (tarefas periódicas)
+  # ---------------------------------------------------------------------------
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eba-beat
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+      - beat_data:/var/run/celery
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - eba-network
+    command: >
+      celery -A app.tasks.celery_app beat
+      --loglevel=info
+      --scheduler celery.beat:PersistentScheduler
+      --schedule /var/run/celery/celerybeat-schedule
+
+  # ---------------------------------------------------------------------------
+  # Flower — Dashboard de monitoramento Celery
+  # ---------------------------------------------------------------------------
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eba-flower
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - eba-network
+    command: >
+      celery -A app.tasks.celery_app flower
+      --port=5555
+      --url_prefix=flower
+
+  # ---------------------------------------------------------------------------
+  # Web — Frontend Vite Dev Server
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eba-web
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules              # preserva node_modules dentro do container
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    networks:
+      - eba-network
+    command: npm run dev -- --host
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  beat_data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  eba-network:
+    driver: bridge
+    name: eba-network
+
