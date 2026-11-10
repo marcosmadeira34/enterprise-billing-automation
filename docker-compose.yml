@@ -91,44 +91,46 @@ services:
   # MinIO — Object Storage (S3-compatible)
   # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:latest
+    image: rustfs/rustfs:latest
     container_name: eba-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: /data
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"    # API S3
-      - "9001:9001"    # Console web
+      - "9000:9000"
+      - "9001:9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 40s
     networks:
       - eba-network
 
   # Inicializa buckets do MinIO
-  minio-init:
-    image: minio/mc:latest
-    container_name: eba-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY};
-        mc mb --ignore-existing local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
-        mc anonymous set none local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
-        echo 'MinIO buckets initialized OK';
-        exit 0;
-      "
-    networks:
-      - eba-network
+  # minio-init:
+  #   image: rustfs/rustfs:latest
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #       mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY};
+  #       mc mb --ignore-existing local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
+  #       mc anonymous set none local/${MINIO_BUCKET_DOCUMENTS:-eba-documents};
+  #       echo 'MinIO buckets initialized OK';
+  #       exit 0;
+  #     "
+  #   networks:
+  #     - eba-network
 
   # ---------------------------------------------------------------------------
   # MailHog — SMTP fake para desenvolvimento
@@ -157,7 +159,7 @@ services:
       <<: *common-env
     volumes:
       - ./backend:/app                    # hot-reload em desenvolvimento
-      - /app/.venv                        # preserva venv dentro do container
+      - /opt/venv                   # preserva venv dentro do container
     ports:
       - "8000:8000"
     depends_on:
