@@ -8,3 +8,4 @@ describe("App smoke test", () => {
     expect(screen.getByText("Enterprise Billing Automation")).toBeInTheDocument();
   });
 });
+
