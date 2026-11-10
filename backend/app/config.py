@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # CORS
     # -------------------------------------------------------------------------
-    allowed_origins: Annotated[list[str], BeforeValidator(_parse_cors_origins)] = [
+    allowed_origins: Annotated[list[str] | str, BeforeValidator(_parse_cors_origins)] = [
         "http://localhost:3000",
         "http://localhost:5173",
     ]

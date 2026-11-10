@@ -20,6 +20,7 @@ from app.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
 from app.core.middleware import TenantContextMiddleware
+from app.core.rate_limit import limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     # 1. Tratadores de Exceções Customizados
+    app.state.limiter = limiter
     register_exception_handlers(app)
 
     # 2. Middleware de CORS

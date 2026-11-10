@@ -131,7 +131,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "S107", "ANN", "SIM"]
-"alembic/**/*.py" = ["ANN", "ERA", "I"]
+"alembic/**/*.py" = ["ANN", "ERA", "I", "E501"]
 "app/config.py" = ["S104"]
 "app/core/repository.py" = ["B009", "B010"]
 
@@ -207,3 +207,8 @@ skips = ["B101"]  # assert_used — allowed in tests
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+]

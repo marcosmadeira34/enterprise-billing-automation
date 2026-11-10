@@ -39,11 +39,14 @@ ENV PATH="/root/.local/bin:$PATH"
 # ---------------------------------------------------------------------------
 FROM base AS dependencies
 
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Cria venv e instala dependências de produção
-RUN uv venv .venv --python 3.12 && \
-    uv pip install --python .venv/bin/python -e "."
+RUN uv venv /opt/venv --python /usr/local/bin/python3.12 && \
+    uv pip install --python /opt/venv/bin/python -e "."
 
 # ---------------------------------------------------------------------------
 # Stage: development — hot-reload, devtools
@@ -51,10 +54,10 @@ RUN uv venv .venv --python 3.12 && \
 FROM dependencies AS development
 
 # Instala dependências de desenvolvimento também
-RUN uv pip install --python .venv/bin/python -e ".[dev]"
+RUN uv pip install --python /opt/venv/bin/python -e ".[dev]"
 
 # Adiciona venv ao PATH
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY . .
 
@@ -70,7 +73,7 @@ FROM base AS production
 
 # Copia apenas o venv instalado (sem devtools)
 COPY --from=dependencies /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Cria usuário não-root
 RUN groupadd --gid 1001 appuser && \

@@ -20,9 +20,10 @@ settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.sync_database_url)
 
 # Target metadata para autogenerate (quando models forem importados)
-# from app.models.base import Base
-# target_metadata = Base.metadata
-target_metadata = None
+import app.models  # noqa: F401, E402
+from app.models.base import Base  # noqa: E402
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
